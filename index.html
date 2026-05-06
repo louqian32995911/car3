@@ -623,6 +623,21 @@ textarea {
   background: var(--surface-soft);
 }
 
+.export-table-button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035)),
+    rgba(44, 44, 46, 0.82);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 750;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 16px rgba(0, 0, 0, 0.18);
+}
+
 .section-heading {
   display: flex;
   align-items: flex-end;
@@ -892,6 +907,7 @@ p {
                 <input id="toDate" type="date" />
               </label>
             </div>
+            <button id="exportTableBtn" class="export-table-button" type="button">导出表格</button>
           </div>
 
           <div id="historyList" class="history-list"></div>
@@ -950,6 +966,7 @@ const els = {
   saveSettingsBtn: document.querySelector("#saveSettingsBtn"),
   fromDate: document.querySelector("#fromDate"),
   toDate: document.querySelector("#toDate"),
+  exportTableBtn: document.querySelector("#exportTableBtn"),
   historyList: document.querySelector("#historyList"),
   recordTemplate: document.querySelector("#recordTemplate"),
 };
@@ -1012,6 +1029,7 @@ function bindEvents() {
   [els.fromDate, els.toDate].forEach((el) => {
     el?.addEventListener("input", renderHistory);
   });
+  els.exportTableBtn?.addEventListener("click", exportTable);
   window.addEventListener("resize", () => {
     state.map?.resize();
   });
@@ -1755,6 +1773,85 @@ function exportRecords(type) {
   ];
   const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
   downloadFile("私车公用轨迹记录.csv", `\ufeff${csv}`, "text/csv;charset=utf-8");
+}
+
+function exportTable() {
+  const records = filteredRecords();
+  if (!records.length) {
+    setLocationState("没有可导出的记录");
+    return;
+  }
+  const totalDistance = records.reduce((sum, record) => sum + Number(record.distanceKm || 0), 0);
+  const totalAmount = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const rows = records
+    .map((record, index) => {
+      const screenshot = record.screenshot || buildSnapshot(record.points || []);
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(formatDateTime(record.startedAt))}</td>
+          <td>${escapeHtml(formatDateTime(record.endedAt))}</td>
+          <td>${Number(record.distanceKm || 0).toFixed(2)}</td>
+          <td>${Number(record.rate || 0).toFixed(2)}</td>
+          <td>${Number(record.amount || 0).toFixed(2)}</td>
+          <td>${record.points?.length || 0}</td>
+          <td><img src="${screenshot}" width="140" height="86" alt="轨迹截图" /></td>
+          <td>${escapeHtml(record.note || "")}</td>
+        </tr>`;
+    })
+    .join("");
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", Arial, sans-serif; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #d0d7de; padding: 8px; text-align: center; vertical-align: middle; }
+    th { background: #f3f4f6; font-weight: 700; }
+    img { display: block; object-fit: cover; margin: 0 auto; border-radius: 4px; }
+    .summary td { background: #f8fafc; font-weight: 700; }
+    .note { text-align: left; min-width: 120px; }
+  </style>
+</head>
+<body>
+  <table>
+    <thead>
+      <tr>
+        <th>序号</th>
+        <th>开始时间</th>
+        <th>结束时间</th>
+        <th>公里数</th>
+        <th>补贴单价</th>
+        <th>补贴金额</th>
+        <th>轨迹点数</th>
+        <th>轨迹截图</th>
+        <th>备注</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+      <tr class="summary">
+        <td colspan="3">合计</td>
+        <td>${totalDistance.toFixed(2)}</td>
+        <td></td>
+        <td>${totalAmount.toFixed(2)}</td>
+        <td colspan="3"></td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>`;
+  const date = new Date().toISOString().slice(0, 10);
+  downloadFile(`私车公用轨迹记录-${date}.xls`, `\ufeff${html}`, "application/vnd.ms-excel;charset=utf-8");
+  setLocationState(`已导出 ${records.length} 条记录`);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => {
+    const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    return map[char];
+  });
 }
 
 function csvCell(value) {
